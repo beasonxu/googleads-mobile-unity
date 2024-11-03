@@ -15,10 +15,8 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using UnityEngine;
 
 using GoogleMobileAds.Api;
 using GoogleMobileAds.Common;
@@ -35,6 +33,10 @@ namespace GoogleMobileAds.iOS
                                                              IntPtr errorRef);
         internal delegate void GADUInitializationCompleteCallback(IntPtr mobileAdsClient,
                                                                   IntPtr initStatusClient);
+        internal delegate void GADUAdAvailableCallback(IntPtr mobileAdsClient,
+                                                       IntPtr preloadConfigClient);
+        internal delegate void GADUAdsExhaustedCallback(IntPtr mobileAdsClient,
+                                                        IntPtr preloadConfigClient);
 
         private MobileAdsClient()
         {
@@ -105,13 +107,68 @@ namespace GoogleMobileAds.iOS
                             Action<PreloadConfiguration> onAdsAvailable,
                             Action<PreloadConfiguration> onAdsExhausted)
         {
-            Debug.Log("Preload API is not implemented for iOS in this version.");
+            this.adAvailableAction = onAdAvailable;
+            this.adsExhaustedAction = onAdsExhausted;
+            IntPtr[] configurationsArray = new IntPtr[configurations.Count];
+            for (int configIndex = 0; configIndex < configurations.Count; configIndex++)
+            {
+                PreloadConfiguration preloadConfig = configurations[configIndex];
+                IntPtr preloadConfigRef = Externs.GADUCreatePreloadConfiguration();
+                PreloadConfigurationClient preloadConfigurationClient =
+                        new PreloadConfigurationClient(preloadConfigRef)
+                        {
+                            AdUnitId = preloadConfig.AdUnitId,
+                            Format = preloadConfig.Format,
+                            BufferSize = preloadConfig.BufferSize
+                        };
+                if (preloadConfig.Request != null)
+                {
+                    preloadConfigurationClient.Request = preloadConfig.Request;
+                }
+                configurationsArray[configIndex] = preloadConfigurationClient.preloadConfigurationPtr;
+            }
+            Externs.GADUPreloadWithCallback(this.mobileAdsClientPtr, configurationsArray,
+                    configurations.Count, AdAvailableCallback, AdsExhaustedCallback);
         }
 
         public void OpenAdInspector(Action<AdInspectorErrorClientEventArgs> onAdInspectorClosed)
         {
             adInspectorClosedAction = onAdInspectorClosed;
             Externs.GADUPresentAdInspector(this.mobileAdsClientPtr, AdInspectorClosedCallback);
+        }
+
+        [MonoPInvokeCallback(typeof(GADUAdAvailableCallback))]
+        private static void AdAvailableCallback(IntPtr mobileAdsClient, IntPtr config)
+        {
+            MobileAdsClient client = IntPtrToMobileAdsClient(mobileAdsClient);
+            if (client.adAvailableAction != null)
+            {
+                PreloadConfigurationClient preloadConfigClient =
+                        new PreloadConfigurationClient(config);
+                client.adAvailableAction(new PreloadConfiguration()
+                {
+                    AdUnitId = preloadConfigClient.AdUnitId,
+                    Format = preloadConfigClient.Format,
+                    BufferSize = preloadConfigClient.BufferSize
+                });
+            }
+        }
+
+        [MonoPInvokeCallback(typeof(GADUAdsExhaustedCallback))]
+        private static void AdsExhaustedCallback(IntPtr mobileAdsClient, IntPtr config)
+        {
+            MobileAdsClient client = IntPtrToMobileAdsClient(mobileAdsClient);
+            if (client.adsExhaustedAction != null)
+            {
+                PreloadConfigurationClient preloadConfigClient =
+                        new PreloadConfigurationClient(config);
+                client.adsExhaustedAction(new PreloadConfiguration()
+                {
+                    AdUnitId = preloadConfigClient.AdUnitId,
+                    Format = preloadConfigClient.Format,
+                    BufferSize = preloadConfigClient.BufferSize
+                });
+            }
         }
 
         [MonoPInvokeCallback(typeof(GADUAdInspectorClosedCallback))]
