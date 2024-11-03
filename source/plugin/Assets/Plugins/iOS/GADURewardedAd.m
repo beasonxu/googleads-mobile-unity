@@ -24,6 +24,29 @@
   return self;
 }
 
++ (BOOL)isPreloadedAdAvailable:(NSString *)adUnitId {
+  return [GADRewardedAd isPreloadedAdAvailable:adUnitId];
+}
+
+- (void)preloadedAdWithAdUnitID:(nonnull NSString *)adUnitId {
+  self.rewardedAd = [GADRewardedAd preloadedAdWithAdUnitID:adUnitId];
+  self.rewardedAd.fullScreenContentDelegate = self;
+
+  __weak GADURewardedAd *weakSelf = self;
+  self.rewardedAd.paidEventHandler = ^void(GADAdValue *_Nonnull adValue) {
+    GADURewardedAd *strongSelf = weakSelf;
+    if (!strongSelf) {
+      return;
+    }
+    if (strongSelf.paidEventCallback) {
+      int64_t valueInMicros = [adValue.value decimalNumberByMultiplyingByPowerOf10:6].longLongValue;
+      strongSelf.paidEventCallback(
+          strongSelf.rewardedAdClient, (int)adValue.precision, valueInMicros,
+          [adValue.currencyCode cStringUsingEncoding:NSUTF8StringEncoding]);
+    }
+  };
+}
+
 - (void)loadWithAdUnitID:(NSString *)adUnitID request:(GADRequest *)request {
   __weak GADURewardedAd *weakSelf = self;
 
